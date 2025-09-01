@@ -354,6 +354,63 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - 📋 Natural language query interface
 - 📋 Advanced drift detection and ML-based anomaly detection
 
+## 🔄 CI/CD & Quality Gates
+
+DTO uses GitHub Actions for continuous integration and security scanning:
+
+### Required Checks
+All pull requests must pass these automated checks:
+
+- **Python CI**: Linting (ruff), type checking (mypy), unit tests (pytest)
+- **Frontend CI**: ESLint, TypeScript compilation, Jest tests, Next.js build
+- **Security Audit**: Dependency vulnerability scanning (pip-audit, npm audit)
+- **SBOM Generation**: Software Bill of Materials for compliance
+- **Container Scanning**: Trivy security scans for Docker images
+- **Secrets Detection**: TruffleHog scan for exposed credentials
+
+### Branch Protection
+Configure these branch protection rules for `main`:
+
+```yaml
+Required status checks:
+  - Python CI
+  - Frontend CI
+  - Dependency Security Audit
+  - Generate SBOM
+  
+Require branches to be up to date: ✓
+Require pull request reviews: ✓ (1 reviewer minimum)
+Dismiss stale reviews: ✓
+Restrict pushes to matching branches: ✓
+```
+
+### Artifacts
+CI generates these artifacts for compliance and debugging:
+- **Coverage Reports**: Python test coverage (XML format)
+- **SBOM**: Software Bill of Materials (SPDX + CycloneDX formats)
+- **Security Reports**: Vulnerability scans and audit results
+- **Build Artifacts**: Frontend builds and test results
+
+### Running Checks Locally
+```bash
+# Python checks
+cd backend
+ruff check dto_api/ dto_cli/ tests/
+mypy dto_api/ dto_cli/
+pytest tests/ -v -m "not integration"
+
+# Frontend checks  
+cd frontend
+npm run lint
+npx tsc --noEmit
+npm test
+npm run build
+
+# Security checks
+pip-audit --desc
+npm audit --audit-level=high
+```
+
 ---
 
 **Built with ❤️ by the DataFlowGuard team**

@@ -1,291 +1,186 @@
-name: Security Scan
+name: Security
 
 on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
   schedule:
-    # Run security scans daily at 2 AM UTC
-    - cron: '0 2 * * *'
-  workflow_dispatch:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # Dependency vulnerability scanning
-  dependency-scan:
+  dependency-audit:
+    name: Dependency Security Audit
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        component: [backend, frontend]
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python (for backend)
-      if: matrix.component == 'backend'
+    # Python dependency audit
+    - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
-        python-version: "3.11"
-    
-    - name: Set up Node.js (for frontend)
-      if: matrix.component == 'frontend'
-      uses: actions/setup-node@v4
-      with:
-        node-version: "18"
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-    
-    - name: Install dependencies (backend)
-      if: matrix.component == 'backend'
-      run: |
-        cd backend
-        pip install -e ".[dev]"
-    
-    - name: Install dependencies (frontend)
-      if: matrix.component == 'frontend'
-      run: |
-        cd frontend
-        npm ci
-    
-    - name: Run pip-audit (backend)
-      if: matrix.component == 'backend'
-      run: |
-        cd backend
-        pip-audit --format=json --output=pip-audit-results.json
-      continue-on-error: true
-    
-    - name: Run npm audit (frontend)
-      if: matrix.component == 'frontend'
-      run: |
-        cd frontend
-        npm audit --audit-level=moderate --json > npm-audit-results.json
-      continue-on-error: true
-    
-    - name: Upload audit results
-      uses: actions/upload-artifact@v3
-      with:
-        name: ${{ matrix.component }}-audit-results
-        path: ${{ matrix.component }}/*audit-results.json
-
-  # Code security scanning with CodeQL
-  codeql-scan:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    
-    strategy:
-      matrix:
-        language: ['python', 'javascript']
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
-      with:
-        languages: ${{ matrix.language }}
-        queries: security-extended,security-and-quality
-    
-    - name: Set up Python
-      if: matrix.language == 'python'
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: 'backend/pyproject.toml'
     
     - name: Install Python dependencies
-      if: matrix.language == 'python'
+      working-directory: ./backend
       run: |
-        cd backend
-        pip install -e .
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,connectors]"
+        pip install pip-audit
     
-    - name: Set up Node.js
-      if: matrix.language == 'javascript'
-      uses: actions/setup-node@v4
-      with:
-        node-version: "18"
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-    
-    - name: Install Node.js dependencies
-      if: matrix.language == 'javascript'
+    - name: Python security audit
+      working-directory: ./backend
       run: |
-        cd frontend
-        npm ci
+        pip-audit --format=json --output=python-audit.json --progress-spinner=off
+        pip-audit --format=cyclonedx-json --output=python-sbom.json --progress-spinner=off
+        # Fail on high severity vulnerabilities
+        pip-audit --desc --format=cyclonedx-json --vulnerability --require-hashes --progress-spinner=off
     
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
-      with:
-        category: "/language:${{ matrix.language }}"
-
-  # Secret scanning
-  secret-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Run TruffleHog OSS
-      uses: trufflesecurity/trufflehog@main
-      with:
-        path: ./
-        base: main
-        head: HEAD
-        extra_args: --debug --only-verified
-
-  # Container image scanning
-  container-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Build images for scanning
-      run: |
-        docker build -t dto/api:scan backend/
-        docker build -t dto/frontend:scan frontend/
-    
-    - name: Run Trivy vulnerability scanner (API)
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'dto/api:scan'
-        format: 'sarif'
-        output: 'api-trivy-results.sarif'
-    
-    - name: Run Trivy vulnerability scanner (Frontend)
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'dto/frontend:scan'
-        format: 'sarif'
-        output: 'frontend-trivy-results.sarif'
-    
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: '.'
-
-  # Infrastructure security scanning
-  infrastructure-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Run Checkov on Terraform
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: infra/terraform
-        framework: terraform
-        output_format: sarif
-        output_file_path: terraform-checkov-results.sarif
-    
-    - name: Run Checkov on Kubernetes manifests
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: infra/helm
-        framework: kubernetes
-        output_format: sarif
-        output_file_path: k8s-checkov-results.sarif
-    
-    - name: Run Checkov on Dockerfiles
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: .
-        framework: dockerfile
-        output_format: sarif
-        output_file_path: docker-checkov-results.sarif
-    
-    - name: Upload Checkov scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: '.'
-
-  # License compliance check
-  license-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    
-    - name: Install pip-licenses
-      run: pip install pip-licenses
-    
-    - name: Install backend dependencies
-      run: |
-        cd backend
-        pip install -e .
-    
-    - name: Check Python licenses
-      run: |
-        cd backend
-        pip-licenses --format=json --output-file=python-licenses.json
-    
+    # Node.js dependency audit
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: "18"
+        node-version: '18'
         cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+        cache-dependency-path: 'frontend/package-lock.json'
     
-    - name: Install frontend dependencies
+    - name: Install Node dependencies
+      working-directory: ./frontend
+      run: npm ci
+    
+    - name: Node.js security audit
+      working-directory: ./frontend
       run: |
-        cd frontend
-        npm ci
+        # Generate audit report
+        npm audit --audit-level=info --json > npm-audit.json || true
+        # Fail on high severity vulnerabilities
+        npm audit --audit-level=high
     
-    - name: Check Node.js licenses
-      run: |
-        cd frontend
-        npx license-checker --json --out nodejs-licenses.json
-    
-    - name: Upload license reports
+    - name: Upload audit artifacts
       uses: actions/upload-artifact@v3
+      if: always()
       with:
-        name: license-reports
+        name: security-audit-reports
         path: |
-          backend/python-licenses.json
-          frontend/nodejs-licenses.json
+          backend/python-audit.json
+          backend/python-sbom.json
+          frontend/npm-audit.json
+        retention-days: 90
 
-  # Security report summary
-  security-summary:
+  sbom-generation:
+    name: Generate SBOM
     runs-on: ubuntu-latest
-    needs: [dependency-scan, codeql-scan, secret-scan, container-scan, infrastructure-scan, license-scan]
-    if: always()
     
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v3
+    - uses: actions/checkout@v4
     
-    - name: Generate security summary
+    - name: Install Syft
       run: |
-        echo "# Security Scan Summary" > security-summary.md
-        echo "" >> security-summary.md
-        echo "**Scan Date:** $(date)" >> security-summary.md
-        echo "" >> security-summary.md
-        
-        echo "## Scans Completed" >> security-summary.md
-        echo "- ✅ Dependency vulnerability scan" >> security-summary.md
-        echo "- ✅ Code security scan (CodeQL)" >> security-summary.md
-        echo "- ✅ Secret detection scan" >> security-summary.md
-        echo "- ✅ Container image scan" >> security-summary.md
-        echo "- ✅ Infrastructure security scan" >> security-summary.md
-        echo "- ✅ License compliance check" >> security-summary.md
-        echo "" >> security-summary.md
-        
-        echo "## Results" >> security-summary.md
-        echo "Detailed results are available in the Security tab of this repository." >> security-summary.md
-        echo "" >> security-summary.md
-        echo "All artifacts from this scan are available for download." >> security-summary.md
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
     
-    - name: Upload security summary
+    - name: Generate SBOM for backend
+      run: |
+        syft backend/ -o spdx-json=backend-sbom.spdx.json
+        syft backend/ -o cyclonedx-json=backend-sbom.cyclonedx.json
+    
+    - name: Generate SBOM for frontend
+      run: |
+        syft frontend/ -o spdx-json=frontend-sbom.spdx.json
+        syft frontend/ -o cyclonedx-json=frontend-sbom.cyclonedx.json
+    
+    - name: Generate combined SBOM
+      run: |
+        syft . -o spdx-json=dataflow-guard-sbom.spdx.json
+        syft . -o cyclonedx-json=dataflow-guard-sbom.cyclonedx.json
+    
+    - name: Upload SBOM artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: security-summary
-        path: security-summary.md
+        name: sbom-reports
+        path: |
+          *-sbom.*.json
+        retention-days: 90
+
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build backend image
+      run: |
+        docker build -t dfg/backend:scan backend/
+    
+    - name: Build frontend image
+      run: |
+        docker build -t dfg/frontend:scan frontend/
+    
+    - name: Install Trivy
+      run: |
+        sudo apt-get update
+        sudo apt-get install wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install trivy
+    
+    - name: Scan backend image
+      run: |
+        trivy image --format json --output backend-trivy.json dfg/backend:scan
+        trivy image --severity HIGH,CRITICAL --exit-code 1 dfg/backend:scan
+    
+    - name: Scan frontend image
+      run: |
+        trivy image --format json --output frontend-trivy.json dfg/frontend:scan
+        trivy image --severity HIGH,CRITICAL --exit-code 1 dfg/frontend:scan
+    
+    - name: Upload Trivy scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: trivy-scan-results
+        path: |
+          *-trivy.json
+        retention-days: 90
+
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better secret detection
+    
+    - name: Install TruffleHog
+      run: |
+        curl -sSfL https://github.com/trufflesecurity/trufflehog/releases/download/v3.63.2/trufflehog_3.63.2_linux_amd64.tar.gz | tar -xz
+        sudo mv trufflehog /usr/local/bin/
+    
+    - name: Scan for secrets
+      run: |
+        trufflehog git file://. --json --no-update > secrets-scan.json || true
+        # Check if any secrets were found (fail if high confidence secrets detected)
+        if grep -q '"verified":true' secrets-scan.json; then
+          echo "High confidence secrets detected!"
+          cat secrets-scan.json
+          exit 1
+        fi
+    
+    - name: Upload secrets scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: secrets-scan-results
+        path: secrets-scan.json
+        retention-days: 90
