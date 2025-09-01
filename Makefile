@@ -7,7 +7,11 @@ help:
 	@echo "DTO Development Commands:"
 	@echo ""
 	@echo "Development:"
-	@echo "  dev          - Start development environment with docker-compose"
+	@echo "  dev          - Start development environment (fast, with hot reload)"
+	@echo "  dev-up       - Start dev containers"
+	@echo "  dev-down     - Stop dev containers"
+	@echo "  dev-logs     - Show dev logs"
+	@echo "  dev-build    - Build dev images"
 	@echo "  dev-api      - Start only API backend for development"
 	@echo "  dev-frontend - Start only frontend for development"
 	@echo ""
@@ -34,19 +38,50 @@ help:
 	@echo "  setup        - Initial project setup"
 
 # Development
-dev: docker-up
+dev: dev-up
 	@echo "✅ Development environment started"
 	@echo "   API: http://localhost:8000"
 	@echo "   Frontend: http://localhost:3000"
 	@echo "   MinIO Console: http://localhost:9001"
 
+dev-up:
+	@echo "🚀 Starting development environment..."
+	cd infra && docker-compose -f docker-compose.dev.yml up -d
+
+dev-down:
+	@echo "🛑 Stopping development environment..."
+	cd infra && docker-compose -f docker-compose.dev.yml down
+
+dev-logs:
+	@echo "📋 Showing development logs..."
+	cd infra && docker-compose -f docker-compose.dev.yml logs -f
+
+dev-build:
+	@echo "🔨 Building development images..."
+	cd infra && docker-compose -f docker-compose.dev.yml build
+
 dev-api:
-	@echo "🚀 Starting API backend..."
-	cd backend && python -m uvicorn dto_api.main:app --reload --host 0.0.0.0 --port 8000
+	@echo "🚀 Starting API backend locally..."
+	cd backend && source .venv/bin/activate && python -m uvicorn dto_api.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-frontend:
-	@echo "🚀 Starting frontend..."
+	@echo "🚀 Starting frontend locally..."
 	cd frontend && npm run dev
+
+dev-local:
+	@echo "🚀 Starting local development (no Docker)..."
+	@echo "Starting frontend in background..."
+	cd frontend && npm run dev &
+	@echo "Starting API..."
+	cd backend && source .venv/bin/activate && python -m uvicorn dto_api.main:app --reload --host 0.0.0.0 --port 8000
+
+dev-local-frontend:
+	@echo "🚀 Starting frontend only (local)..."
+	cd frontend && npm run dev
+
+dev-local-api:
+	@echo "🚀 Starting API only (local)..."
+	cd backend && source .venv/bin/activate && python -m uvicorn dto_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Build & Test
 build:

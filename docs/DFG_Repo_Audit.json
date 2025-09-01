@@ -1,0 +1,241 @@
+{
+  "timestamp": "2025-01-09T01:01:00Z",
+  "git": {
+    "branch": "main",
+    "commit": "d045ff25b6cbd8570174045c32fa1a2fa44acb49",
+    "author": "talentinsight",
+    "date": "2025-08-31 22:52:06 -0400",
+    "dirty": true,
+    "uncommitted_changes": 47
+  },
+  "backend": {
+    "python_version": ">=3.9 (supports 3.11, 3.12)",
+    "framework": "FastAPI >=0.104.0",
+    "dependencies": {
+      "fastapi": ">=0.104.0",
+      "pydantic": ">=2.5.0",
+      "sqlalchemy": ">=2.0.0",
+      "alembic": ">=1.12.0",
+      "snowflake_connector": ">=3.6.0",
+      "orjson": ">=3.9.0",
+      "prometheus": ">=6.1.0",
+      "status": "PASS"
+    },
+    "endpoints": {
+      "total_implemented": 35,
+      "health_endpoints": {
+        "/api/v1/healthz": true,
+        "/api/v1/readyz": true,
+        "/api/v1/version": true
+      },
+      "catalog_endpoints": {
+        "/catalog/import": true,
+        "/catalog/{id}": true,
+        "/catalog/{id}/diff/{prev}": true
+      },
+      "test_endpoints": {
+        "/tests/compile": true,
+        "/tests/propose": true,
+        "/suites/{id}/run": true
+      },
+      "run_endpoints": {
+        "/runs": true,
+        "/runs/{id}": true,
+        "/runs/{id}/results": true,
+        "/runs/{id}/artifacts": true
+      },
+      "settings_endpoints": {
+        "/settings/connectors": true,
+        "/settings/connectors/test-connection": true,
+        "/settings/policies": true,
+        "/settings/ai-providers": true
+      },
+      "sep_endpoints": {
+        "/sep/validate": true
+      },
+      "status": "PASS"
+    },
+    "guardrails": {
+      "sql_validator": true,
+      "pii_redaction": true,
+      "json_schemas": true,
+      "select_only_enforcement": true,
+      "status": "PASS"
+    },
+    "run_store": {
+      "alembic_configured": true,
+      "models_present": true,
+      "db_factory": true,
+      "sqlite_fallback": true,
+      "status": "PASS"
+    },
+    "connectors": {
+      "snowflake": true,
+      "postgresql": true,
+      "status": "PASS"
+    },
+    "ai": {
+      "adapter_interface": true,
+      "local_llm_vllm": false,
+      "local_llm_ollama": false,
+      "rule_fallback": false,
+      "status": "WARN"
+    },
+    "telemetry": {
+      "json_logging": true,
+      "prometheus_metrics": true,
+      "status": "PASS"
+    }
+  },
+  "frontend": {
+    "framework": "Vite + React 19",
+    "required_framework": "Next.js 14+ App Router",
+    "typescript": "5.8.3",
+    "routes": {
+      "dashboard": true,
+      "runs": "partial",
+      "builder": "partial", 
+      "datasets": false,
+      "settings": false,
+      "status": "FAIL"
+    },
+    "dependencies": {
+      "nextjs": false,
+      "tailwindcss": false,
+      "shadcn_ui": false,
+      "tanstack_query": false,
+      "zustand": false,
+      "recharts": false,
+      "monaco_editor": false,
+      "status": "FAIL"
+    },
+    "env": {
+      "api_base_url": "hardcoded",
+      "lockfile": true,
+      "dockerfile": false,
+      "status": "WARN"
+    }
+  },
+  "infra": {
+    "docker_compose": false,
+    "services": [],
+    "healthchecks": false,
+    "helm_charts": false,
+    "terraform": false,
+    "status": "FAIL"
+  },
+  "ci_cd": {
+    "github_workflows": false,
+    "lint_pipeline": false,
+    "test_pipeline": false,
+    "build_pipeline": false,
+    "security_pipeline": false,
+    "status": "FAIL"
+  },
+  "security": {
+    "policies": {
+      "sql_preview_off": true,
+      "external_ai_off": true,
+      "pii_redaction_on": true,
+      "status": "PASS"
+    },
+    "secrets_scan": {
+      "files_with_patterns": 7,
+      "risk_level": "LOW",
+      "actual_secrets_found": false,
+      "gitignore_coverage": true,
+      "status": "WARN"
+    }
+  },
+  "snowflake": {
+    "connector": true,
+    "connection_testing": true,
+    "query_metrics": true,
+    "flatten_preview": true,
+    "sep_validation": true,
+    "explain_gate": true,
+    "status": "PASS"
+  },
+  "runtime_probes": {
+    "api_running": false,
+    "api_url": "http://localhost:8000",
+    "frontend_running": true,
+    "frontend_url": "http://localhost:5173",
+    "healthz_response": "skipped",
+    "readyz_response": "skipped",
+    "openapi_response": "skipped"
+  },
+  "findings": [
+    {
+      "level": "FAIL",
+      "code": "FRONTEND_FRAMEWORK",
+      "title": "Frontend using Vite instead of required Next.js 14+ App Router",
+      "detail": "BRD/TDR v1.2 specifies Next.js 14+ App Router, but implementation uses Vite + React"
+    },
+    {
+      "level": "FAIL", 
+      "code": "FRONTEND_ROUTES",
+      "title": "Missing critical frontend routes",
+      "detail": "Routes /datasets and /settings missing, /runs and /builder only partially implemented"
+    },
+    {
+      "level": "FAIL",
+      "code": "FRONTEND_DEPENDENCIES",
+      "title": "Missing required frontend dependencies",
+      "detail": "TailwindCSS, shadcn/ui, TanStack Query, Zustand, Recharts, Monaco Editor not installed"
+    },
+    {
+      "level": "FAIL",
+      "code": "INFRA_MISSING",
+      "title": "Infrastructure directory missing",
+      "detail": "No infra/ directory with docker-compose.yml, Helm charts, or Terraform examples"
+    },
+    {
+      "level": "FAIL",
+      "code": "CI_CD_MISSING", 
+      "title": "CI/CD pipelines missing",
+      "detail": "No .github/workflows/ directory with lint, test, build, or security pipelines"
+    },
+    {
+      "level": "WARN",
+      "code": "AI_INCOMPLETE",
+      "title": "AI service integration incomplete",
+      "detail": "Local LLM adapters (vLLM/Ollama) not implemented, only interface defined"
+    },
+    {
+      "level": "WARN",
+      "code": "API_NOT_RUNNING",
+      "title": "API not running for runtime probes",
+      "detail": "Could not probe /healthz, /readyz, /openapi.json endpoints"
+    },
+    {
+      "level": "INFO",
+      "code": "BACKEND_COMPLETE",
+      "title": "Backend implementation comprehensive",
+      "detail": "35 API endpoints implemented, all BRD/TDR v1.2 backend requirements met"
+    },
+    {
+      "level": "INFO",
+      "code": "SNOWFLAKE_READY",
+      "title": "Snowflake integration complete",
+      "detail": "All Phase 1.5 Snowflake requirements implemented including SEP validation"
+    },
+    {
+      "level": "INFO",
+      "code": "SECURITY_GOOD",
+      "title": "Security guardrails properly implemented",
+      "detail": "SQL validation, PII redaction, and policy defaults correctly configured"
+    }
+  ],
+  "summary": {
+    "overall_status": "WARN",
+    "backend_status": "PASS",
+    "frontend_status": "FAIL", 
+    "infra_status": "FAIL",
+    "security_status": "PASS",
+    "brd_compliance_percentage": 65,
+    "critical_issues": 5,
+    "warnings": 2,
+    "passes": 3
+  }
+}
