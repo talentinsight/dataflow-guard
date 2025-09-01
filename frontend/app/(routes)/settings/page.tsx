@@ -1,7 +1,11 @@
 'use client'
 
+// LEGACY: Settings page kept functional for configuration management
+// Core testing functionality has moved to the Workbench
+
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import Link from 'next/link'
 import { apiClient } from '@/lib/apiClient'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Database, Brain, Shield, TestTube, Plus, Trash2 } from 'lucide-react'
+import { Database, Brain, Shield, TestTube, Plus, Trash2, ArrowRight } from 'lucide-react'
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('connections')
@@ -121,6 +125,12 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
           <p className="text-muted-foreground">Configure connections, policies, and AI providers</p>
         </div>
+        <Button asChild>
+          <Link href="/workbench">
+            <ArrowRight className="mr-2 h-4 w-4" />
+            Go to Workbench
+          </Link>
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
