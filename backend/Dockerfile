@@ -10,12 +10,12 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements
-COPY pyproject.toml ./
+# Copy requirements and README
+COPY pyproject.toml README.md ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir ".[connectors]"
 
 # Production stage
 FROM python:3.11-slim as production

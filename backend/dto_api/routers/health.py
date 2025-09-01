@@ -1,9 +1,11 @@
 """Health check endpoints."""
 
 from typing import Dict, Any
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import structlog
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -47,12 +49,44 @@ async def health_check() -> HealthResponse:
 @router.get("/readyz", response_model=ReadinessResponse)
 async def readiness_check() -> ReadinessResponse:
     """Readiness check with dependency validation."""
+    from dto_api.db import get_engine
+    import time
+    
     checks = {}
     
-    # Database check (stub)
+    # Database connectivity and migration check
     try:
-        # TODO: Implement actual database connectivity check
-        checks["database"] = {"status": "healthy", "response_time_ms": 5}
+        start_time = time.time()
+        engine = get_engine()
+        
+        # Test basic connectivity
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            
+            # Check if Alembic migrations have been run
+            try:
+                result = conn.execute(text("SELECT version_num FROM alembic_version"))
+                version = result.scalar()
+                if version:
+                    checks["database"] = {
+                        "status": "healthy", 
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "migration_version": version
+                    }
+                else:
+                    checks["database"] = {
+                        "status": "unhealthy", 
+                        "error": "No migration version found",
+                        "hint": "Run 'make db-migrate' to initialize database"
+                    }
+            except SQLAlchemyError:
+                # alembic_version table doesn't exist
+                checks["database"] = {
+                    "status": "unhealthy",
+                    "error": "Database not migrated",
+                    "hint": "Run 'make db-migrate' to initialize database"
+                }
+                
     except Exception as e:
         logger.error("Database health check failed", exc_info=e)
         checks["database"] = {"status": "unhealthy", "error": str(e)}
@@ -76,6 +110,17 @@ async def readiness_check() -> ReadinessResponse:
     # Determine overall status
     all_healthy = all(check.get("status") == "healthy" for check in checks.values())
     status = "ready" if all_healthy else "not_ready"
+    
+    # Return 503 if not ready (especially for database migration issues)
+    if not all_healthy and checks.get("database", {}).get("status") == "unhealthy":
+        raise HTTPException(
+            status_code=503, 
+            detail={
+                "status": status,
+                "checks": checks,
+                "message": "Service not ready - database migration required"
+            }
+        )
     
     return ReadinessResponse(
         status=status,

@@ -104,6 +104,10 @@ docker-down:
 	@echo "🐳 Stopping services..."
 	cd infra && docker-compose down
 
+docker-rebuild:
+	@echo "🐳 Rebuilding Docker images..."
+	cd infra && docker-compose build --no-cache
+
 docker-logs:
 	cd infra && docker-compose logs -f
 
