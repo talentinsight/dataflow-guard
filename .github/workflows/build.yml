@@ -1,0 +1,253 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build'
+        required: true
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_API: ${{ github.repository }}/api
+  IMAGE_NAME_FRONTEND: ${{ github.repository }}/frontend
+
+jobs:
+  # Build and push Docker images
+  build-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      api-image: ${{ steps.meta-api.outputs.tags }}
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+      api-digest: ${{ steps.build-api.outputs.digest }}
+      frontend-digest: ${{ steps.build-frontend.outputs.digest }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    # API Image
+    - name: Extract metadata for API
+      id: meta-api
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push API image
+      id: build-api
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: true
+        tags: ${{ steps.meta-api.outputs.tags }}
+        labels: ${{ steps.meta-api.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+    
+    # Frontend Image
+    - name: Extract metadata for Frontend
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Frontend image
+      id: build-frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        file: ./frontend/Dockerfile
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  # Generate SBOM (Software Bill of Materials)
+  generate-sbom:
+    runs-on: ubuntu-latest
+    needs: build-images
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Generate SBOM for API
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ needs.build-images.outputs.api-image }}
+        format: spdx-json
+        output-file: api-sbom.spdx.json
+    
+    - name: Generate SBOM for Frontend
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ needs.build-images.outputs.frontend-image }}
+        format: spdx-json
+        output-file: frontend-sbom.spdx.json
+    
+    - name: Upload SBOM artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom-files
+        path: |
+          api-sbom.spdx.json
+          frontend-sbom.spdx.json
+
+  # Security scanning of built images
+  security-scan-images:
+    runs-on: ubuntu-latest
+    needs: build-images
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    
+    strategy:
+      matrix:
+        image: 
+          - name: api
+            ref: ${{ needs.build-images.outputs.api-image }}
+          - name: frontend
+            ref: ${{ needs.build-images.outputs.frontend-image }}
+    
+    steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ matrix.image.ref }}
+        format: 'sarif'
+        output: '${{ matrix.image.name }}-trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: '${{ matrix.image.name }}-trivy-results.sarif'
+
+  # Create GitHub release
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [build-images, generate-sbom, security-scan-images]
+    permissions:
+      contents: write
+      packages: read
+    
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Download SBOM artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: sbom-files
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Simple changelog generation - could be enhanced with conventional commits
+        echo "## Changes" > CHANGELOG.md
+        git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> CHANGELOG.md
+        echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+        cat CHANGELOG.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        body: |
+          ## Docker Images
+          
+          - API: `${{ needs.build-images.outputs.api-image }}`
+          - Frontend: `${{ needs.build-images.outputs.frontend-image }}`
+          
+          ## Security
+          
+          - API Image Digest: `${{ needs.build-images.outputs.api-digest }}`
+          - Frontend Image Digest: `${{ needs.build-images.outputs.frontend-digest }}`
+          - SBOM files attached to this release
+          
+          ${{ steps.changelog.outputs.CHANGELOG }}
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+    
+    - name: Upload SBOM to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./api-sbom.spdx.json
+        asset_name: api-sbom.spdx.json
+        asset_content_type: application/json
+
+  # Update Helm chart
+  update-helm-chart:
+    runs-on: ubuntu-latest
+    needs: build-images
+    permissions:
+      contents: write
+    
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Update Helm chart version
+      run: |
+        VERSION=${GITHUB_REF_NAME#v}
+        sed -i "s/version: .*/version: $VERSION/" infra/helm/dto/Chart.yaml
+        sed -i "s/appVersion: .*/appVersion: \"$VERSION\"/" infra/helm/dto/Chart.yaml
+        sed -i "s/tag: .*/tag: \"$VERSION\"/" infra/helm/dto/values.yaml
+    
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add infra/helm/dto/
+        git commit -m "Update Helm chart to version ${GITHUB_REF_NAME#v}" || exit 0
+        git push

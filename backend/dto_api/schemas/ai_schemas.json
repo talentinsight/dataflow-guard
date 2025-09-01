@@ -1,0 +1,356 @@
+{
+  "compile_request": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "expression": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "description": "Natural language or formula expression to compile"
+      },
+      "dataset": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$",
+        "description": "Target dataset in schema.table format"
+      },
+      "catalog_context": {
+        "type": "object",
+        "description": "Catalog context for compilation"
+      },
+      "test_type": {
+        "type": "string",
+        "enum": ["uniqueness", "not_null", "freshness", "row_count", "reconciliation", "rule", "schema", "drift"],
+        "description": "Hint for test type"
+      }
+    },
+    "required": ["expression", "dataset"],
+    "additionalProperties": false
+  },
+  
+  "compile_response": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "ir": {
+        "$ref": "#/definitions/ir"
+      },
+      "sql_preview": {
+        "type": "string",
+        "description": "Generated SQL preview"
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "AI confidence score"
+      },
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Compilation warnings"
+      }
+    },
+    "required": ["ir", "sql_preview", "confidence", "warnings"],
+    "additionalProperties": false
+  },
+  
+  "propose_request": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "datasets": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$"
+        },
+        "minItems": 1,
+        "maxItems": 50,
+        "description": "Target datasets"
+      },
+      "catalog_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Catalog context ID"
+      },
+      "profile": {
+        "type": "string",
+        "enum": ["smoke", "standard", "deep", "custom"],
+        "default": "standard",
+        "description": "Test profile"
+      },
+      "layers": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["RAW", "PREP", "MART"]
+        },
+        "description": "Target data layers"
+      }
+    },
+    "required": ["datasets", "catalog_id"],
+    "additionalProperties": false
+  },
+  
+  "propose_response": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "proposals": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/test_proposal"
+        },
+        "description": "Test proposals"
+      },
+      "total_proposed": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Total number of proposals"
+      },
+      "auto_approvable_count": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of auto-approvable tests"
+      }
+    },
+    "required": ["proposals", "total_proposed", "auto_approvable_count"],
+    "additionalProperties": false
+  },
+  
+  "definitions": {
+    "ir": {
+      "type": "object",
+      "properties": {
+        "ir_version": {
+          "type": "string",
+          "default": "1.0"
+        },
+        "dataset": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$"
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ir_filter"
+          }
+        },
+        "joins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ir_join"
+          }
+        },
+        "aggregations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "assertion": {
+          "$ref": "#/definitions/ir_assertion"
+        },
+        "partition_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dialect": {
+          "type": "string",
+          "enum": ["snowflake", "postgres", "bigquery", "redshift"]
+        }
+      },
+      "required": ["dataset", "assertion", "dialect"],
+      "additionalProperties": false
+    },
+    
+    "ir_filter": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["time_window", "equals", "not_equals", "in", "not_in", "gt", "lt", "gte", "lte"]
+        },
+        "column": {
+          "type": "string"
+        },
+        "value": {},
+        "operator": {
+          "type": "string"
+        }
+      },
+      "required": ["type", "column", "value"],
+      "additionalProperties": false
+    },
+    
+    "ir_join": {
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": "string"
+        },
+        "right": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["inner", "left", "right", "full"],
+          "default": "left"
+        }
+      },
+      "required": ["left", "right"],
+      "additionalProperties": false
+    },
+    
+    "ir_assertion": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["uniqueness", "not_null", "row_count_range", "freshness", "equality_with_tolerance"]
+        },
+        "left": {
+          "type": "string"
+        },
+        "right": {},
+        "tolerance": {
+          "type": "object",
+          "properties": {
+            "abs": {
+              "type": "number"
+            },
+            "pct": {
+              "type": "number"
+            },
+            "dup_rows": {
+              "type": "integer"
+            },
+            "hours": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["kind", "left", "right"],
+      "additionalProperties": false
+    },
+    
+    "test_proposal": {
+      "type": "object",
+      "properties": {
+        "test_def": {
+          "$ref": "#/definitions/test_definition"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500,
+          "description": "Why this test is recommended"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "AI confidence score"
+        },
+        "auto_approvable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Can be auto-approved"
+        }
+      },
+      "required": ["test_def", "rationale", "confidence", "auto_approvable"],
+      "additionalProperties": false
+    },
+    
+    "test_definition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "minLength": 3,
+          "maxLength": 100
+        },
+        "type": {
+          "type": "string",
+          "enum": ["uniqueness", "not_null", "freshness", "row_count", "reconciliation", "rule", "schema", "drift"]
+        },
+        "dataset": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expression": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "last_days": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365
+            },
+            "last_hours": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8760
+            },
+            "batch_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tolerance": {
+          "type": "object",
+          "properties": {
+            "abs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "dup_rows": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["blocker", "major", "minor"],
+          "default": "major"
+        },
+        "gate": {
+          "type": "string",
+          "enum": ["fail", "warn"],
+          "default": "fail"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": ["name", "type", "dataset"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database for run store
+  postgres:
+    image: postgres:15-alpine
+    container_name: dto-postgres
+    environment:
+      POSTGRES_DB: dto
+      POSTGRES_USER: dto
+      POSTGRES_PASSWORD: dto
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dto -d dto"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dto-network
+
+  # MinIO for artifact storage (S3-compatible)
+  minio:
+    image: minio/minio:latest
+    container_name: dto-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - dto-network
+
+  # DTO API Backend
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: dto-api
+    environment:
+      # Database
+      DATABASE_URL: postgresql://dto:dto@postgres:5432/dto
+      
+      # Artifact Storage
+      ARTIFACT_STORAGE_TYPE: s3
+      ARTIFACT_STORAGE_CONFIG: |
+        {
+          "endpoint_url": "http://minio:9000",
+          "access_key": "minioadmin",
+          "secret_key": "minioadmin",
+          "bucket_name": "dto-artifacts",
+          "region": "us-east-1"
+        }
+      
+      # Snowflake Connection (configure these for real testing)
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER:-}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD:-}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE:-DFG_RO}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-ANALYTICS_WH}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE:-PROD_DB}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA:-RAW}
+      SNOWFLAKE_REGION: ${SNOWFLAKE_REGION:-}
+      
+      # Runner Budgets & Safety
+      DFG_SELECT_TIMEOUT: 60
+      DFG_SCAN_BUDGET_BYTES: 0
+      DFG_SAMPLE_LIMIT: 1000
+      DFG_ALLOWED_SCHEMAS: ${DFG_ALLOWED_SCHEMAS:-PROD_DB.RAW,PROD_DB.PREP,PROD_DB.MART}
+      DFG_NETWORK_ALLOWLIST: "*.snowflakecomputing.com"
+      DFG_QUERY_TAG: DataFlowGuard
+      DFG_LOG_PII: "false"
+      
+      # Security Policies (secure defaults)
+      EXTERNAL_AI_ENABLED: "false"
+      SQL_PREVIEW_ENABLED: "false"
+      ADMIN_POWER_MODE: "false"
+      PII_REDACTION_ENABLED: "true"
+      STATIC_SECRETS_FORBIDDEN: "true"
+      
+      # Logging
+      LOG_LEVEL: INFO
+      
+      # CORS
+      CORS_ORIGINS: "http://localhost:3000,http://frontend:3000"
+    env_file:
+      - ../backend/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ./artifacts:/app/artifacts
+    networks:
+      - dto-network
+
+  # DTO Frontend
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: dto-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - dto-network
+
+  # Optional: Local LLM service (Ollama)
+  # Uncomment to enable local AI capabilities
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: dto-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   environment:
+  #     - OLLAMA_HOST=0.0.0.0
+  #   networks:
+  #     - dto-network
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  # ollama_data:
+  #   driver: local
+
+networks:
+  dto-network:
+    driver: bridge
