@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dfg_postgres
+    environment:
+      POSTGRES_DB: dfg_db
+      POSTGRES_USER: dfg_user
+      POSTGRES_PASSWORD: dfg_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dfg_user -d dfg_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dfg_net
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: dfg_api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://dfg_user:dfg_password@postgres:5432/dfg_db
+      - PYTHONPATH=/app
+    env_file:
+      - ../backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - dfg_net
+    volumes:
+      - ../backend:/app
+    command: ["uvicorn", "dto_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: dfg_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+    env_file:
+      - ../frontend/.env
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - dfg_net
+
+  minio:
+    image: minio/minio:latest
+    container_name: dfg_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - dfg_net
+
+networks:
+  dfg_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:

@@ -23,7 +23,17 @@ help:
 	@echo "  fmt          - Format code"
 	@echo "  type-check   - Run type checking"
 	@echo ""
-	@echo "Docker:"
+	@echo "Docker Compose:"
+	@echo "  compose.up   - Start services with docker-compose"
+	@echo "  compose.down - Stop services"
+	@echo "  compose.logs - View service logs"
+	@echo "  compose.build- Build Docker images"
+	@echo ""
+	@echo "Local Development:"
+	@echo "  api.dev      - Start API backend locally (uvicorn)"
+	@echo "  front.dev    - Start frontend locally (next dev)"
+	@echo ""
+	@echo "Docker (legacy):"
 	@echo "  docker-build - Build Docker images"
 	@echo "  docker-up    - Start services with docker-compose"
 	@echo "  docker-down  - Stop services"
@@ -122,7 +132,39 @@ type-check:
 	@echo "🔍 Type checking frontend..."
 	cd frontend && npm run type-check
 
-# Docker
+# Docker Compose
+compose.up:
+	@echo "🐳 Starting services with docker-compose..."
+	docker compose -f infra/docker-compose.yml up -d
+	@echo "⏳ Waiting for services to be ready..."
+	@sleep 15
+	@echo "✅ Services started successfully!"
+	@echo "   API: http://localhost:8000"
+	@echo "   Frontend: http://localhost:3000"
+	@echo "   MinIO Console: http://localhost:9001"
+
+compose.down:
+	@echo "🐳 Stopping services..."
+	docker compose -f infra/docker-compose.yml down
+
+compose.logs:
+	@echo "📋 Showing service logs..."
+	docker compose -f infra/docker-compose.yml logs -f
+
+compose.build:
+	@echo "🔨 Building Docker images..."
+	docker compose -f infra/docker-compose.yml build --no-cache
+
+# Development (local)
+api.dev:
+	@echo "🚀 Starting API backend locally..."
+	cd backend && source ../.venv/bin/activate && uvicorn dto_api.main:app --reload --host 0.0.0.0 --port 8000
+
+front.dev:
+	@echo "🚀 Starting frontend locally..."
+	cd frontend && npm run dev
+
+# Docker (legacy targets)
 docker-build:
 	@echo "🐳 Building Docker images..."
 	docker build -t dto/api:latest backend/
