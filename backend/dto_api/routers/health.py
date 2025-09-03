@@ -49,60 +49,66 @@ async def health_check() -> HealthResponse:
 @router.get("/readyz", response_model=ReadinessResponse)
 async def readiness_check() -> ReadinessResponse:
     """Readiness check with dependency validation."""
-    from dto_api.db import get_engine
+    from dto_api.db.models import get_db_manager
+    from dto_api.adapters.connectors.snowflake import SnowflakeConnector
+    from dto_api.services.artifact_service import artifact_service
     import time
     
     checks = {}
     
-    # Database connectivity and migration check
+    # Database connectivity check
     try:
         start_time = time.time()
-        engine = get_engine()
+        db_manager = get_db_manager()
         
-        # Test basic connectivity
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-            
-            # Check if Alembic migrations have been run
-            try:
-                result = conn.execute(text("SELECT version_num FROM alembic_version"))
-                version = result.scalar()
-                if version:
-                    checks["database"] = {
-                        "status": "healthy", 
-                        "response_time_ms": int((time.time() - start_time) * 1000),
-                        "migration_version": version
-                    }
-                else:
-                    checks["database"] = {
-                        "status": "unhealthy", 
-                        "error": "No migration version found",
-                        "hint": "Run 'make db-migrate' to initialize database"
-                    }
-            except SQLAlchemyError:
-                # alembic_version table doesn't exist
-                checks["database"] = {
-                    "status": "unhealthy",
-                    "error": "Database not migrated",
-                    "hint": "Run 'make db-migrate' to initialize database"
-                }
+        if db_manager.health_check():
+            checks["database"] = {
+                "status": "healthy", 
+                "response_time_ms": int((time.time() - start_time) * 1000),
+                "type": "postgresql"
+            }
+        else:
+            checks["database"] = {
+                "status": "unhealthy",
+                "error": "Database connection failed"
+            }
                 
     except Exception as e:
         logger.error("Database health check failed", exc_info=e)
         checks["database"] = {"status": "unhealthy", "error": str(e)}
     
-    # AI service check (stub)
+    # Snowflake connector check
     try:
-        # TODO: Implement actual AI service connectivity check
-        checks["ai_service"] = {"status": "healthy", "response_time_ms": 10}
+        start_time = time.time()
+        connector = SnowflakeConnector()
+        
+        # Test connection (this will use environment variables)
+        await connector.connect()
+        await connector.disconnect()
+        
+        checks["snowflake"] = {
+            "status": "healthy", 
+            "response_time_ms": int((time.time() - start_time) * 1000)
+        }
     except Exception as e:
-        logger.error("AI service health check failed", exc_info=e)
-        checks["ai_service"] = {"status": "unhealthy", "error": str(e)}
+        logger.error("Snowflake health check failed", exc_info=e)
+        checks["snowflake"] = {"status": "unhealthy", "error": str(e)}
     
-    # Artifact storage check (stub)
+    # MinIO/artifact storage check
     try:
-        # TODO: Implement actual storage connectivity check
-        checks["artifact_storage"] = {"status": "healthy", "response_time_ms": 3}
+        start_time = time.time()
+        
+        if artifact_service.health_check():
+            checks["artifact_storage"] = {
+                "status": "healthy", 
+                "response_time_ms": int((time.time() - start_time) * 1000),
+                "type": "minio"
+            }
+        else:
+            checks["artifact_storage"] = {
+                "status": "unhealthy",
+                "error": "MinIO connection failed"
+            }
     except Exception as e:
         logger.error("Artifact storage health check failed", exc_info=e)
         checks["artifact_storage"] = {"status": "unhealthy", "error": str(e)}
@@ -111,14 +117,14 @@ async def readiness_check() -> ReadinessResponse:
     all_healthy = all(check.get("status") == "healthy" for check in checks.values())
     status = "ready" if all_healthy else "not_ready"
     
-    # Return 503 if not ready (especially for database migration issues)
-    if not all_healthy and checks.get("database", {}).get("status") == "unhealthy":
+    # Return 503 if not ready
+    if not all_healthy:
         raise HTTPException(
             status_code=503, 
             detail={
                 "status": status,
                 "checks": checks,
-                "message": "Service not ready - database migration required"
+                "message": "Service not ready - one or more dependencies unhealthy"
             }
         )
     

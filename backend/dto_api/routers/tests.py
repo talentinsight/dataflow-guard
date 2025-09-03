@@ -1,6 +1,8 @@
 """Test management and compilation endpoints."""
 
 from fastapi import APIRouter, HTTPException, Depends
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 import structlog
 
 from dto_api.models.tests import (
@@ -16,9 +18,46 @@ from dto_api.models.tests import (
 )
 from dto_api.services.ai_adapter_iface import AIAdapterInterface
 from dto_api.services.planner import TestPlannerService
+from dto_api.services.compile_service import compile_service
 
 router = APIRouter()
 logger = structlog.get_logger()
+
+# Mock test catalog for UI demo
+DEMO_TEST_CATALOG = [
+    {
+        "id": "data-quality",
+        "name": "Data Quality Check",
+        "description": "Validate data completeness and accuracy",
+        "category": "Quality",
+        "tests": [
+            {"id": "null-check", "name": "Null Value Check", "description": "Check for unexpected null values"},
+            {"id": "duplicate-check", "name": "Duplicate Detection", "description": "Identify duplicate records"},
+            {"id": "range-check", "name": "Value Range Validation", "description": "Ensure values are within expected ranges"},
+        ]
+    },
+    {
+        "id": "schema-validation", 
+        "name": "Schema Validation",
+        "description": "Check column types and constraints",
+        "category": "Schema",
+        "tests": [
+            {"id": "type-check", "name": "Data Type Validation", "description": "Verify column data types"},
+            {"id": "constraint-check", "name": "Constraint Validation", "description": "Check primary key and foreign key constraints"},
+            {"id": "column-check", "name": "Column Existence", "description": "Ensure required columns exist"},
+        ]
+    },
+    {
+        "id": "freshness-check",
+        "name": "Data Freshness", 
+        "description": "Monitor data update frequency",
+        "category": "Freshness",
+        "tests": [
+            {"id": "last-update", "name": "Last Update Check", "description": "Verify data was updated recently"},
+            {"id": "batch-freshness", "name": "Batch Freshness", "description": "Check if latest batch is within SLA"},
+        ]
+    }
+]
 
 
 def get_ai_adapter() -> AIAdapterInterface:
@@ -31,8 +70,54 @@ def get_planner_service() -> TestPlannerService:
     return TestPlannerService()
 
 
-@router.post("/tests/compile", response_model=CompileResponse)
-async def compile_test(
+@router.get("/tests/catalog")
+async def get_test_catalog():
+    """Get available test catalog for UI demo."""
+    return {"tests": DEMO_TEST_CATALOG}
+
+
+class TestCompileRequest(BaseModel):
+    """Request model for test compilation."""
+    tests: List[Dict[str, Any]]
+    dataset: Optional[str] = None
+
+
+class TestCompileResponse(BaseModel):
+    """Response model for test compilation."""
+    sql: str
+    tests: List[Dict[str, Any]]
+    meta: Dict[str, Any]
+
+
+@router.post("/tests/compile", response_model=TestCompileResponse)
+async def compile_tests(
+    request: TestCompileRequest
+) -> TestCompileResponse:
+    """Compile test templates into executable SQL."""
+    try:
+        logger.info(
+            "Compiling test templates",
+            test_count=len(request.tests),
+            dataset=request.dataset
+        )
+        
+        # Use compile service to generate SQL
+        result = compile_service.compile_tests(request.tests, request.dataset)
+        
+        logger.info(
+            "Test compilation completed",
+            test_count=len(result["tests"])
+        )
+        
+        return TestCompileResponse(**result)
+        
+    except Exception as e:
+        logger.error("Test compilation failed", exc_info=e)
+        raise HTTPException(status_code=500, detail=f"Compilation failed: {str(e)}")
+
+
+@router.post("/tests/compile-expression", response_model=CompileResponse)
+async def compile_expression(
     request: CompileRequest,
     ai_adapter: AIAdapterInterface = Depends(get_ai_adapter)
 ) -> CompileResponse:

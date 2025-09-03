@@ -41,9 +41,12 @@ class SnowflakeConnector:
         # SQL validation patterns
         self._forbidden_keywords = [
             'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'CREATE', 'ALTER', 'DROP',
-            'TRUNCATE', 'GRANT', 'REVOKE', 'CALL', 'USE', 'COPY', 'PUT', 'GET',
+            'TRUNCATE', 'GRANT', 'REVOKE', 'CALL', 'COPY', 'PUT', 'GET',
             'BEGIN', 'COMMIT', 'ROLLBACK', 'SET', 'UNSET'
         ]
+        
+        # Allow USE WAREHOUSE for metadata operations
+        self._allowed_use_commands = ['USE WAREHOUSE', 'USE DATABASE', 'USE SCHEMA']
     
     def _load_from_env(self) -> Dict[str, Any]:
         """Load Snowflake settings from environment variables."""
@@ -187,9 +190,13 @@ class SnowflakeConnector:
             raise ValueError("Only single statements are allowed")
         
         # Check for allowed statement types
-        allowed_prefixes = ['SELECT', 'WITH', 'EXPLAIN']
-        if not any(sql_upper.startswith(prefix) for prefix in allowed_prefixes):
-            raise ValueError(f"Only SELECT, WITH, and EXPLAIN statements are allowed. Got: {sql_upper[:50]}")
+        allowed_prefixes = ['SELECT', 'WITH', 'EXPLAIN', 'SHOW', 'DESCRIBE', 'DESC']
+        
+        # Allow specific USE commands for metadata operations
+        is_allowed_use = any(sql_upper.startswith(cmd) for cmd in self._allowed_use_commands)
+        
+        if not any(sql_upper.startswith(prefix) for prefix in allowed_prefixes) and not is_allowed_use:
+            raise ValueError(f"Only SELECT, WITH, EXPLAIN, SHOW, DESCRIBE, and specific USE statements are allowed. Got: {sql_upper[:50]}")
         
         # Check for forbidden keywords
         for keyword in self._forbidden_keywords:
@@ -225,6 +232,32 @@ class SnowflakeConnector:
         for schema_ref in referenced_schemas:
             if schema_ref not in self.allowed_schemas:
                 raise ValueError(f"Access to schema '{schema_ref}' is not allowed. Allowed schemas: {self.allowed_schemas}")
+    
+    async def execute_query(self, sql: str) -> List[Dict[str, Any]]:
+        """Execute a SQL query and return results."""
+        try:
+            # Validate SQL first
+            self._validate_sql(sql)
+            
+            # Execute query
+            cursor = self.connection.cursor(DictCursor)
+            cursor.execute(sql)
+            
+            # Get results
+            results = cursor.fetchall()
+            
+            # Get query ID for metrics
+            query_id = cursor.sfqid
+            
+            logger.info("Query executed successfully", 
+                       query_id=query_id, 
+                       rows_returned=len(results))
+            
+            return results
+            
+        except Exception as e:
+            logger.error("Query execution failed", sql=sql[:100], error=str(e))
+            raise
     
     def _get_query_history(self, query_id: str) -> Dict[str, Any]:
         """Get query execution statistics from query history."""

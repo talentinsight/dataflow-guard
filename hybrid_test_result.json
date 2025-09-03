@@ -1,0 +1,97 @@
+{
+  "test_summary": {
+    "total_tests": 4,
+    "static_tests": 3,
+    "ai_tests": 1,
+    "passed": 4,
+    "failed": 0,
+    "warnings": 0,
+    "execution_time_seconds": 10.478716
+  },
+  "static_results": [
+    {
+      "test_name": "Static Row Count",
+      "test_type": "row_count",
+      "status": "pass",
+      "description": "Compare row counts across pipeline layers",
+      "sql": "\n                SELECT \n                    'source' as layer, COUNT(*) as row_count FROM DTO_DB.RAW.CUSTOMERS\n                UNION ALL\n                SELECT \n                    'prep' as layer, COUNT(*) as row_count FROM DTO_DB.PREP.CUSTOMERS_CLEAN\n                UNION ALL\n                SELECT \n                    'mart' as layer, COUNT(*) as row_count FROM DTO_DB.MART.CUSTOMER_SUMMARY\n                ",
+      "raw_results": [
+        {
+          "LAYER": "source",
+          "ROW_COUNT": 3
+        },
+        {
+          "LAYER": "prep",
+          "ROW_COUNT": 3
+        },
+        {
+          "LAYER": "mart",
+          "ROW_COUNT": 1
+        }
+      ],
+      "source": "static"
+    },
+    {
+      "test_name": "Static Null Check",
+      "test_type": "null_check",
+      "status": "pass",
+      "description": "Check for NULL values in critical columns",
+      "sql": "\n                SELECT \n                    'prep_nulls' as check_type,\n                    COUNT(*) as null_count\n                FROM DTO_DB.PREP.CUSTOMERS_CLEAN\n                WHERE EMAIL IS NULL OR CUSTOMER_ID IS NULL\n                ",
+      "raw_results": [
+        {
+          "CHECK_TYPE": "prep_nulls",
+          "NULL_COUNT": 0
+        }
+      ],
+      "source": "static"
+    },
+    {
+      "test_name": "Static Email Format",
+      "test_type": "email_format",
+      "status": "pass",
+      "description": "Basic email format validation",
+      "sql": "\n                SELECT \n                    COUNT(*) as invalid_email_count\n                FROM DTO_DB.PREP.CUSTOMERS_CLEAN\n                WHERE EMAIL IS NOT NULL \n                AND EMAIL NOT LIKE '%@%'\n                ",
+      "raw_results": [
+        {
+          "INVALID_EMAIL_COUNT": 0
+        }
+      ],
+      "source": "static"
+    }
+  ],
+  "ai_results": [
+    {
+      "test_name": "AI: Check if all email addresses are properly formatte...",
+      "test_type": "data_quality",
+      "status": "pass",
+      "natural_language": "Check if all email addresses are properly formatted",
+      "generated_sql": "SELECT EMAIL, CASE WHEN EMAIL LIKE '%@%.%' THEN 'Valid' ELSE 'Invalid' END AS EMAIL_FORMAT FROM DTO_DB.RAW.CUSTOMERS",
+      "explanation": "This query checks each email address in the CUSTOMERS table. It uses the LIKE operator to check if the email contains '@' and '.' characters. If the email is properly formatted, it will return 'Valid', otherwise it will return 'Invalid'.",
+      "raw_results": [
+        {
+          "EMAIL": "ahmet@example.com",
+          "EMAIL_FORMAT": "Valid"
+        },
+        {
+          "EMAIL": "fatma@example.com",
+          "EMAIL_FORMAT": "Valid"
+        },
+        {
+          "EMAIL": "mehmet@example.com",
+          "EMAIL_FORMAT": "Valid"
+        }
+      ],
+      "tokens": 498,
+      "provider": "openai",
+      "source": "ai"
+    }
+  ],
+  "recommendations": [
+    "🤖 AI tests used 498 tokens (≈$0.0050) for advanced validation"
+  ],
+  "cost_info": {
+    "static_cost": 0.0,
+    "ai_cost_tokens": 498,
+    "estimated_ai_cost_usd": 0.00498
+  }
+}

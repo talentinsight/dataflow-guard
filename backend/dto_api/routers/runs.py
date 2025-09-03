@@ -2,6 +2,7 @@
 
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 import structlog
 
 from dto_api.models.reports import (
@@ -14,6 +15,7 @@ from dto_api.models.reports import (
 )
 from dto_api.models.tests import TestResult
 from dto_api.services.runner import RunnerService
+from dto_api.services.sse_service import sse_service
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -22,6 +24,86 @@ logger = structlog.get_logger()
 def get_runner_service() -> RunnerService:
     """Dependency to get runner service."""
     return RunnerService()
+
+
+@router.post("/runs/demo")
+async def start_demo_run(request: dict) -> dict:
+    """Start a demo run for UI testing."""
+    try:
+        import uuid
+        from dto_api.services.compile_service import compile_service
+        
+        run_id = str(uuid.uuid4())
+        selected_tests = request.get("selected_tests", [])
+        dataset = request.get("dataset", "PROD_DB.RAW.DEMO_CUSTOMERS")
+        dry_run = request.get("dry_run", True)
+        
+        # Test template'lerini oluştur
+        test_templates = []
+        
+        if "null-check" in selected_tests:
+            test_templates.append({
+                "name": "Email Null Check",
+                "type": "null_check",
+                "dataset": dataset,
+                "column": "email",
+                "expected_nulls": 1  # Zeynep'in email'i NULL
+            })
+            
+        if "duplicate-check" in selected_tests:
+            test_templates.append({
+                "name": "Phone Duplicate Check", 
+                "type": "duplicate_check",
+                "dataset": dataset,
+                "keys": ["phone"],
+                "expected_duplicates": 1  # Emre ve Cansu aynı telefon
+            })
+            
+        if "type-check" in selected_tests:
+            test_templates.append({
+                "name": "Row Count Check",
+                "type": "row_count", 
+                "dataset": dataset,
+                "expected_min": 8,
+                "expected_max": 12
+            })
+            
+        if "range-check" in selected_tests:
+            test_templates.append({
+                "name": "Credit Score Range",
+                "type": "null_check",
+                "dataset": dataset, 
+                "column": "credit_score",
+                "expected_nulls": 1  # Zeynep'in credit_score'u NULL
+            })
+        
+        # SQL compile et
+        if test_templates:
+            compiled = compile_service.compile_tests(test_templates, dataset)
+            sql_preview = compiled["sql"][:300] + "..." if len(compiled["sql"]) > 300 else compiled["sql"]
+        else:
+            sql_preview = "-- No tests selected"
+            
+        return {
+            "run_id": run_id,
+            "status": "completed" if dry_run else "running",
+            "estimated_duration": 5 if dry_run else 30,
+            "message": f"Demo run started! {len(test_templates)} tests compiled.",
+            "selected_tests": selected_tests,
+            "dataset": dataset,
+            "sql_preview": sql_preview,
+            "test_count": len(test_templates),
+            "dry_run": dry_run
+        }
+        
+    except Exception as e:
+        logger.error("Demo run failed", exc_info=e)
+        return {
+            "run_id": None,
+            "status": "error", 
+            "error": str(e),
+            "message": "Demo run failed"
+        }
 
 
 @router.post("/suites/{suite_id}/run", response_model=RunResponse)
@@ -184,6 +266,32 @@ async def get_run_ai_prompts(
     except Exception as e:
         logger.error("Failed to get AI prompts", run_id=run_id, exc_info=e)
         raise HTTPException(status_code=500, detail=f"Failed to get AI prompts: {str(e)}")
+
+
+@router.get("/runs/{run_id}/stream")
+async def stream_run_updates(run_id: str):
+    """Stream live updates for a test run via Server-Sent Events."""
+    try:
+        logger.info("Starting SSE stream", run_id=run_id)
+        
+        async def event_generator():
+            async for message in sse_service.stream_run_updates(run_id):
+                yield message
+        
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Cache-Control"
+            }
+        )
+        
+    except Exception as e:
+        logger.error("Failed to start SSE stream", run_id=run_id, exc_info=e)
+        raise HTTPException(status_code=500, detail=f"Failed to stream updates: {str(e)}")
 
 
 @router.post("/runs/{run_id}/cancel")

@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/common/EmptyState'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { Play, Square, RotateCcw, Activity, CheckCircle, XCircle, Clock } from 'lucide-react'
 
 export function RunConsole() {
@@ -17,7 +19,9 @@ export function RunConsole() {
     status, 
     setStatus, 
     getSelectedTestCount,
+    selectedTests,
     builderText,
+    datasetName,
     datasetMeta 
   } = useWorkspaceStore()
 
@@ -33,11 +37,28 @@ export function RunConsole() {
 
   // Start run mutation
   const startRunMutation = useMutation({
-    mutationFn: (runData: any) => apiClient.runSuite('default'),
+    mutationFn: async () => {
+      const response = await fetch('http://localhost:8000/api/v1/runs/demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selected_tests: Array.from(selectedTests),
+          dataset: datasetName,
+          dry_run: true
+        })
+      })
+      return response.json()
+    },
     onSuccess: (data) => {
       setRunId(data.run_id)
-      setStatus('running')
-      setLogs(['Run started...', `Run ID: ${data.run_id}`])
+      setStatus(data.status === 'completed' ? 'done' : 'running')
+      setLogs([
+        'Demo run started...',
+        `Run ID: ${data.run_id}`,
+        `Dataset: ${data.dataset}`,
+        `Tests: ${data.test_count} compiled`,
+        data.message
+      ])
     },
     onError: (error) => {
       setStatus('error')
@@ -68,17 +89,13 @@ export function RunConsole() {
       return
     }
 
-    if (!builderText || builderText.trim() === '') {
-      setLogs(['Error: No SQL to execute. Please compile tests first.'])
+    if (!datasetName || datasetName.trim() === '') {
+      setLogs(['Error: No dataset specified. Please enter a dataset name.'])
       return
     }
 
     setLogs(['Preparing to start run...'])
-    startRunMutation.mutate({
-      tests: Array.from(useWorkspaceStore.getState().selectedTests),
-      sql: builderText,
-      dataset: datasetMeta?.name || 'default'
-    })
+    startRunMutation.mutate()
   }
 
   const handleStopRun = () => {
@@ -93,7 +110,7 @@ export function RunConsole() {
     setLogs([])
   }
 
-  const canStart = status === 'idle' && getSelectedTestCount() > 0 && builderText.trim() !== ''
+  const canStart = status === 'idle' && getSelectedTestCount() > 0 && datasetName.trim() !== ''
   const canStop = status === 'running'
   const canReset = status !== 'idle'
 
@@ -180,8 +197,8 @@ export function RunConsole() {
             <h4 className="font-medium text-sm">Run Configuration</h4>
             <div className="space-y-1 text-xs text-muted-foreground">
               <div>Tests: {getSelectedTestCount()} selected</div>
-              <div>Dataset: {datasetMeta?.name || 'None selected'}</div>
-              <div>SQL: {builderText ? 'Ready' : 'Not compiled'}</div>
+              <div>Dataset: {datasetName || 'None specified'}</div>
+              <div>Mode: Demo (auto-compile)</div>
             </div>
           </div>
         )}

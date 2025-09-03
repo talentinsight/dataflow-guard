@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/common/EmptyState'
-import { Search, TestTube, CheckCircle, Database, Clock, FolderOpen } from 'lucide-react'
+import { Search, TestTube, CheckCircle, Database, Clock, FolderOpen, X } from 'lucide-react'
 
 // Mock test templates (extracted from existing builder page)
 const testTemplates = [
@@ -82,40 +84,54 @@ export function PlanPanel() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-4 border-b">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-semibold">Test Planning</h2>
-            <p className="text-sm text-muted-foreground">Select tests to include in your suite</p>
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 bg-background border-b">
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold">Test Planning</h2>
+            {selectedCount > 0 && (
+              <Badge variant="secondary" className="text-xs h-5">
+                {selectedCount}
+              </Badge>
+            )}
           </div>
-          <Badge variant="secondary">
-            {selectedCount} selected
-          </Badge>
-        </div>
-        
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search tests..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        
-        {selectedCount > 0 && (
-          <div className="flex items-center justify-between mt-3 pt-3 border-t">
-            <span className="text-sm text-muted-foreground">
-              {selectedCount} test{selectedCount !== 1 ? 's' : ''} selected
-            </span>
-            <Button variant="ghost" size="sm" onClick={clearTestSelection}>
-              Clear all
-            </Button>
+          
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input
+              placeholder="Search tests..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-7 h-8 text-xs"
+            />
           </div>
-        )}
+          
+          {/* Selected Count & Clear */}
+          {selectedCount > 0 && (
+            <>
+              <Separator className="my-2" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {selectedCount} selected
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearTestSelection}
+                  className="h-6 px-2 text-xs"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Clear
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-4">
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-3">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -185,7 +201,8 @@ export function PlanPanel() {
             </CardContent>
           </Card>
         )}
-      </div>
+        </div>
+      </ScrollArea>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 """FastAPI main application entry point."""
 
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -11,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from dto_api.routers import catalog, datasets, health, runs, settings, tests, sep
+from dto_api.routers import catalog, datasets, health, runs, settings, tests, sep, etl, metadata, pipeline_test
+from dto_api.routers import pipeline_test_v2
+from dto_api.routers import zero_sql
+from dto_api.routers import hybrid_test
 from dto_api.telemetry.logging import setup_logging
 from dto_api.telemetry.metrics import setup_metrics
 
@@ -25,6 +29,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     logger = structlog.get_logger()
     logger.info("DTO API starting up", version="0.1.0")
+    
+    # Initialize database
+    try:
+        import os
+        from dto_api.db.models import init_database
+        
+        database_url = os.getenv("DATABASE_URL", "sqlite:///./dto.db")
+        init_database(database_url)
+        logger.info("Database initialized", database_url=database_url.split("@")[-1] if "@" in database_url else database_url)
+    except Exception as e:
+        logger.error("Failed to initialize database", error=str(e))
+        # Don't fail startup - let health checks handle this
     
     yield
     
@@ -42,10 +58,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware - restrictive by default
+# CORS middleware - get origins from environment
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend dev server
+    allow_origins=[origin.strip() for origin in cors_origins],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
@@ -107,6 +124,12 @@ app.include_router(tests.router, prefix="/api/v1", tags=["tests"])
 app.include_router(runs.router, prefix="/api/v1", tags=["runs"])
 app.include_router(settings.router, prefix="/api/v1", tags=["settings"])
 app.include_router(sep.router, prefix="/api/v1", tags=["sep"])
+app.include_router(etl.router, prefix="/api/v1", tags=["etl"])
+app.include_router(metadata.router, prefix="/api/v1", tags=["metadata"])
+app.include_router(pipeline_test.router, prefix="/api/v1", tags=["pipeline_test"])
+app.include_router(pipeline_test_v2.router, prefix="/api/v1", tags=["pipeline_test_v2"])
+app.include_router(zero_sql.router, prefix="/api/v1", tags=["zero_sql"])
+app.include_router(hybrid_test.router, prefix="/api/v1", tags=["hybrid_test"])
 
 # Setup Prometheus metrics
 instrumentator = Instrumentator()

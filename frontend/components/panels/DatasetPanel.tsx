@@ -7,11 +7,13 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/common/EmptyState'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Upload, Database, FileText, Eye, X } from 'lucide-react'
 
 export function DatasetPanel() {
-  const { datasetMeta, setDatasetMeta } = useWorkspaceStore()
+  const { datasetName, datasetMeta, setDatasetName, setDatasetMeta } = useWorkspaceStore()
 
   // Query for available datasets (graceful fallback)
   const { data: datasets, isLoading } = useQuery({
@@ -113,6 +115,23 @@ export function DatasetPanel() {
       </CardHeader>
       
       <CardContent className="flex-1 flex flex-col p-4 space-y-4">
+        {/* Dataset Name Input */}
+        <div className="space-y-2">
+          <label htmlFor="dataset-name" className="block text-sm font-medium">
+            Dataset Name
+          </label>
+          <Input
+            id="dataset-name"
+            placeholder="e.g., PROD_DB.RAW.DEMO_CUSTOMERS"
+            value={datasetName}
+            onChange={(e) => setDatasetName(e.target.value)}
+            className="w-full"
+          />
+          <p className="text-xs text-muted-foreground">
+            Enter the full table name (database.schema.table)
+          </p>
+        </div>
+        
         {datasetMeta ? (
           // Dataset Preview
           <div className="space-y-4">

@@ -14,6 +14,7 @@ interface WorkspaceState {
   selectedTests: Set<string>;
   
   // Dataset management
+  datasetName: string;
   datasetMeta: DatasetMeta | null;
   
   // Editor state
@@ -29,6 +30,7 @@ interface WorkspaceState {
   isTestSelected: (testId: string) => boolean;
   getSelectedTestCount: () => number;
   
+  setDatasetName: (name: string) => void;
   setDatasetMeta: (meta: DatasetMeta | null) => void;
   setBuilderText: (text: string) => void;
   setRunId: (id: string | null) => void;
@@ -41,6 +43,7 @@ interface WorkspaceState {
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   // Initial state
   selectedTests: new Set<string>(),
+  datasetName: 'PROD_DB.RAW.DEMO_CUSTOMERS',
   datasetMeta: null,
   builderText: '',
   runId: null,
@@ -74,6 +77,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   // Dataset actions
   setDatasetMeta: (meta: DatasetMeta | null) => {
     set({ datasetMeta: meta });
+  },
+  
+  // Dataset actions
+  setDatasetName: (name: string) => {
+    set({ datasetName: name });
   },
   
   // Editor actions

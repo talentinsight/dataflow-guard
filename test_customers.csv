@@ -1,0 +1,11 @@
+CUSTOMER_ID,EMAIL,FIRST_NAME,LAST_NAME,REGISTRATION_DATE,STATUS,CREDIT_SCORE,LAST_LOGIN
+1,john.doe@email.com,John,Doe,2023-01-15,active,750,2024-01-15 10:30:00
+2,jane.smith@email.com,Jane,Smith,2023-02-20,active,680,2024-01-14 15:45:00
+3,bob.wilson@email.com,Bob,Wilson,2023-03-10,active,720,2024-01-13 09:20:00
+4,,Alice,Brown,2023-04-05,active,800,2024-01-12 14:10:00
+5,charlie.davis@email.com,Charlie,Davis,2023-05-12,inactive,650,2023-12-01 08:30:00
+6,diana.miller@email.com,Diana,Miller,2023-06-18,active,1200,2024-01-11 16:45:00
+7,eve.taylor@email.com,Eve,Taylor,2023-07-22,pending,700,2024-01-10 11:20:00
+8,john.doe@email.com,John,Doe,2023-01-15,active,750,2024-01-09 12:15:00
+9,frank.anderson@email.com,Frank,Anderson,2023-08-30,active,690,2024-01-08 13:40:00
+10,grace.thomas@email.com,Grace,Thomas,2023-09-15,active,760,2024-01-07 10:55:00
